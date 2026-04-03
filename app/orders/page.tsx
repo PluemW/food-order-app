@@ -1,27 +1,28 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { getMenuItemName, getMenuItemIcon } from "@/lib/data"
+import { menus, getMenuItemName, getMenuItemIcon } from "@/lib/data"
 import type { Order, OrderStatus } from "@/lib/data"
 
 const statusColors: Record<OrderStatus, { bg: string; text: string; dot: string }> = {
   pending: { bg: "bg-yellow-100", text: "text-yellow-800", dot: "bg-yellow-500" },
   cooking: { bg: "bg-blue-100", text: "text-blue-800", dot: "bg-blue-500" },
-  completed: { bg: "bg-gray-100", text: "text-gray-800", dot: "bg-gray-500" },
+  "waiting-for-payment": { bg: "bg-indigo-100", text: "text-indigo-800", dot: "bg-indigo-500" },
+  completed: { bg: "bg-green-100", text: "text-green-800", dot: "bg-green-500" },
 }
 
 const statusLabels: Record<OrderStatus, string> = {
-  pending: "Pending",
-  cooking: "Cooking",
-  completed: "Completed",
+  pending: "กำลังรอ",
+  cooking: "กำลังทำอาหาร",
+  "waiting-for-payment": "รอชำระเงิน",
+  completed: "เสร็จสิ้น",
 }
 
-const statusFlow: OrderStatus[] = ["pending", "cooking", "completed"]
+const statusFlow: OrderStatus[] = ["pending", "cooking", "waiting-for-payment", "completed"]
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedTab, setSelectedTab] = useState<"active" | "completed">("active")
   const [isPolling, setIsPolling] = useState(true)
 
   async function fetchOrders() {
@@ -52,12 +53,12 @@ export default function OrdersPage() {
     return () => clearInterval(pollInterval)
   }, [isPolling])
 
-  async function updateOrderStatus(orderId: number, newStatus: OrderStatus, remake: boolean = false) {
+  async function updateOrderStatus(orderId: number, newStatus: OrderStatus) {
     try {
       const res = await fetch("/api/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, status: newStatus, remake }),
+        body: JSON.stringify({ orderId, status: newStatus }),
       })
       const updatedOrder = await res.json()
 
@@ -69,55 +70,17 @@ export default function OrdersPage() {
     }
   }
 
-  const activeOrders = orders.filter((o) => o.status !== "completed")
+  const preparingOrders = orders.filter((o) => o.status === "pending" || o.status === "cooking")
+  const paymentOrders = orders.filter((o) => o.status === "waiting-for-payment")
   const completedOrders = orders.filter((o) => o.status === "completed")
-  const displayOrders = selectedTab === "active" ? activeOrders : completedOrders
 
   return (
     <main className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 py-8 px-4 sm:px-6 md:px-8 shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">👨‍🍳 Chef Dashboard</h1>
-          <p className="text-gray-600">Manage incoming orders and track preparation</p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 sticky top-24 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
-          <div className="flex gap-8 py-4">
-            <button
-              onClick={() => setSelectedTab("active")}
-              className={`pb-4 font-semibold transition-colors border-b-2 ${
-                selectedTab === "active"
-                  ? "border-orange-500 text-orange-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Active Orders
-              {activeOrders.length > 0 && (
-                <span className="ml-2 px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-bold">
-                  {activeOrders.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setSelectedTab("completed")}
-              className={`pb-4 font-semibold transition-colors border-b-2 ${
-                selectedTab === "completed"
-                  ? "border-orange-500 text-orange-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Completed
-              {completedOrders.length > 0 && (
-                <span className="ml-2 px-2.5 py-1 bg-gray-200 text-gray-700 rounded-full text-sm font-bold">
-                  {completedOrders.length}
-                </span>
-              )}
-            </button>
-          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">👨‍🍳 หน้าจอครัว</h1>
+          <p className="text-gray-600">จัดการคำสั่งซื้อและติดตามการทำงานของอาหาร</p>
         </div>
       </div>
 
@@ -125,23 +88,53 @@ export default function OrdersPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-8">
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-gray-600 text-lg">Loading orders...</p>
+            <p className="text-gray-600 text-lg">กำลังโหลดรายการออเดอร์...</p>
           </div>
-        ) : displayOrders.length === 0 ? (
+        ) : orders.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-            <p className="text-gray-500 text-lg">
-              {selectedTab === "active" ? "No active orders" : "No completed orders"}
-            </p>
+            <p className="text-gray-500 text-lg">ยังไม่มีรายการสั่งซื้อ</p>
           </div>
         ) : (
-          <div className="grid gap-6">
-            {displayOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                onUpdateStatus={updateOrderStatus}
-              />
-            ))}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* Left column: pending + cooking */}
+            <div>
+              <h2 className="text-xl font-bold text-orange-700 mb-3">คำสั่งซื้อที่กำลังทำ</h2>
+              {preparingOrders.length === 0 ? (
+                <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อที่กำลังรอหรือกำลังทำ</div>
+              ) : (
+                <div className="space-y-4">
+                  {preparingOrders.map((order) => (
+                    <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Right column: waiting-for-payment + completed */}
+            <div>
+              <h2 className="text-xl font-bold text-indigo-700 mb-3">รอชำระเงิน / เสร็จสิ้น</h2>
+              {paymentOrders.length === 0 && completedOrders.length === 0 ? (
+                <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">
+                  ไม่มีคำสั่งซื้อรอชำระเงินหรือเสร็จสิ้น
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {paymentOrders.map((order) => (
+                    <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                  ))}
+                  {completedOrders.length > 0 && (
+                    <div className="pt-4 border-t border-gray-200">
+                      <h3 className="text-lg font-semibold text-green-700 mb-2">ประวัติคำสั่งซื้อที่เสร็จสิ้น</h3>
+                      <div className="space-y-3">
+                        {completedOrders.map((order) => (
+                          <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -154,11 +147,18 @@ function OrderCard({
   onUpdateStatus,
 }: {
   order: Order
-  onUpdateStatus: (orderId: number, status: OrderStatus, remake?: boolean) => void
+  onUpdateStatus: (orderId: number, status: OrderStatus) => void
 }) {
   const colors = statusColors[order.status as OrderStatus] || statusColors.completed
   const currentStatusIndex = statusFlow.indexOf(order.status as OrderStatus)
   const nextStatus = statusFlow[currentStatusIndex + 1]
+
+  const orderTotal = order.items.reduce((sum, item) => {
+    const menuItem = menus.find((m) => m.id === item.menuId)
+    const basePrice = menuItem?.price || 0
+    const extraPrice = item.extraSize ? 10 : 0
+    return sum + (basePrice + extraPrice) * item.qty
+  }, 0)
 
   const getTimeString = (timestamp: number) => {
     const diff = Math.floor((Date.now() - timestamp) / 1000)
@@ -176,32 +176,26 @@ function OrderCard({
             <div className={`px-3 py-1 rounded-full text-sm font-semibold ${colors.bg} ${colors.text}`}>
               {statusLabels[order.status]}
             </div>
-            {order.remake && (
-              <div className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
-                🔄 Remake
-              </div>
-            )}
           </div>
           <h3 className="text-lg sm:text-2xl font-bold text-gray-900">Order #{order.id}</h3>
           <div className="text-sm text-gray-600 mt-2 space-y-1">
             <p>
-              Customer: <span className="font-semibold text-gray-900">{order.customerName}</span> •{" "}
-              {getTimeString(order.createdAt)}
+              ลูกค้า: <span className="font-semibold text-gray-900">{order.customerName}</span> • {getTimeString(order.createdAt)}
             </p>
             <p>
-              Type: <span className="font-semibold text-gray-900">
-                {order.orderType === "delivery" ? "🚚 Delivery" : "🍽️ Dine In"}
+              ประเภท: <span className="font-semibold text-gray-900">
+                {order.orderType === "delivery" ? "🚚 จัดส่ง" : "🍽️ นั่งทาน"}
               </span>
               {order.orderType === "dine-in" && order.tableNumber && (
-                <span> (Table: {order.tableNumber})</span>
+                <span> (โต๊ะ: {order.tableNumber})</span>
               )}
               {order.orderType === "delivery" && order.phone && (
-                <span> (Phone: {order.phone})</span>
+                <span> (โทร: {order.phone})</span>
               )}
             </p>
             {order.notes && (
               <p>
-                Notes: <span className="italic text-gray-700">{order.notes}</span>
+                บันทึก: <span className="italic text-gray-700">{order.notes}</span>
               </p>
             )}
           </div>
@@ -217,7 +211,10 @@ function OrderCard({
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{getMenuItemIcon(item.menuId)}</span>
                 <div>
-                  <p className="font-medium text-gray-900">{getMenuItemName(item.menuId)}</p>
+                  <p className="font-medium text-gray-900">
+                    {getMenuItemName(item.menuId)}
+                    {item.extraSize && <span className="text-orange-600 text-sm"> (พิเศษ)</span>}
+                  </p>
                 </div>
               </div>
               <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-semibold text-sm">
@@ -228,32 +225,29 @@ function OrderCard({
         </div>
       </div>
 
+      <div className="px-6 py-3 bg-white border-t border-gray-100">
+        <p className="text-sm font-semibold text-gray-800">รวมทั้งหมด: <span className="text-orange-600">₿{orderTotal}</span></p>
+      </div>
+
       {/* Actions */}
       <div className="px-6 py-4 bg-white border-t border-gray-100 flex flex-col sm:flex-row gap-3">
-        {nextStatus && order.status !== "completed" && (
-          <button
-            onClick={() => onUpdateStatus(order.id, nextStatus)}
-            className="flex-1 px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg transition-colors"
-          >
-            {nextStatus === "cooking"
-              ? "👨‍🍳 Start Cooking"
-              : "✅ Complete Order"}
-          </button>
-        )}
-
         {order.status !== "completed" && (
           <button
-            onClick={() => onUpdateStatus(order.id, "pending", true)}
-            className="flex-1 px-4 py-3 bg-red-100 hover:bg-red-200 text-red-700 font-semibold rounded-lg transition-colors"
-            title="Mark as remake - moves back to pending"
+            onClick={() => {
+              const next = order.status === "pending" ? "cooking" : order.status === "cooking" ? "waiting-for-payment" : "completed"
+              onUpdateStatus(order.id, next as OrderStatus)
+            }}
+            className="flex-1 px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg transition-colors"
           >
-            🔄 Remake
+            {order.status === "pending" && "👨‍🍳 เริ่มทำอาหาร"}
+            {order.status === "cooking" && "🍽️ ทำอาหารเสร็จแล้ว (รอชำระเงิน)"}
+            {order.status === "waiting-for-payment" && "💳 ยืนยันชำระเงิน"}
           </button>
         )}
 
         {order.status === "completed" && (
           <div className="flex-1 px-4 py-3 bg-green-100 text-green-700 font-semibold rounded-lg text-center">
-            ✅ Completed
+            ✅ เสร็จสิ้นแล้ว
           </div>
         )}
       </div>

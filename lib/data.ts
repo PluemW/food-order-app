@@ -7,11 +7,12 @@ export interface MenuItem {
   icon: string;
 }
 
-export type OrderStatus = "pending" | "cooking" | "completed"
+export type OrderStatus = "pending" | "cooking" | "waiting-for-payment" | "completed"
 
 export interface OrderItem {
   menuId: number
   qty: number
+  extraSize?: boolean
 }
 
 export interface Order {
@@ -58,10 +59,10 @@ export const menus: MenuItem[] = [
 ]
 
 export const categories = [
-  { key: "appetizer", label: "Appetizers" },
-  { key: "main", label: "Main Courses" },
-  { key: "drinks", label: "Drinks" },
-  { key: "desserts", label: "Desserts" },
+  { key: "appetizer", label: "อาหารเรียกน้ำย่อย" },
+  { key: "main", label: "อาหารจานหลัก" },
+  { key: "drinks", label: "เครื่องดื่ม" },
+  { key: "desserts", label: "ของหวาน" },
 ]
 
 // Sample orders for testing
@@ -96,7 +97,7 @@ export const sampleOrders: Order[] = [
       { menuId: 7, qty: 2 },
       { menuId: 10, qty: 1 },
     ],
-    status: "completed",
+    status: "waiting-for-payment",
     createdAt: Date.now() - 1200000, // 20 mins ago
     updatedAt: Date.now() - 60000,
   },

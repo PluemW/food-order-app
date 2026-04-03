@@ -31,7 +31,7 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   const body = await req.json()
-  const { orderId, status, remake } = body
+  const { orderId, status } = body
 
   const orderIndex = orders.findIndex((o) => o.id === orderId)
   if (orderIndex === -1) {
@@ -40,9 +40,6 @@ export async function PATCH(req: Request) {
 
   orders[orderIndex].status = status
   orders[orderIndex].updatedAt = Date.now()
-  if (remake) {
-    orders[orderIndex].remake = true
-  }
 
   console.log("Order Updated:", orders[orderIndex])
   return Response.json(orders[orderIndex])
