@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { menus, categories } from "@/lib/data"
 import type { MenuItem } from "@/lib/data"
+import CartSidebar from "@/app/components/CartSidebar"
+import CheckoutModal from "@/app/components/CheckoutModal"
 
 export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>("main")
