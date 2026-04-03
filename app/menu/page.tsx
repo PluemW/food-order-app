@@ -3,85 +3,12 @@
 import { useState } from "react"
 import { menus, categories } from "@/lib/data"
 import type { MenuItem } from "@/lib/data"
-import CartSidebar from "@/app/components/CartSidebar"
-import CheckoutModal from "@/app/components/CheckoutModal"
 
 export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>("main")
   const [hoveredId, setHoveredId] = useState<number | null>(null)
-  const [cart, setCart] = useState<{ menuId: number; qty: number }[]>([])
-  const [showCart, setShowCart] = useState(false)
-  const [showCheckout, setShowCheckout] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
 
   const filteredItems = menus.filter(item => item.category === activeCategory)
-
-  const addToCart = (menuId: number) => {
-    setCart(prev => {
-      const existing = prev.find(item => item.menuId === menuId)
-      if (existing) {
-        return prev.map(item =>
-          item.menuId === menuId ? { ...item, qty: item.qty + 1 } : item
-        )
-      }
-      return [...prev, { menuId, qty: 1 }]
-    })
-  }
-
-  const updateCart = (menuId: number, qty: number) => {
-    if (qty === 0) {
-      setCart(prev => prev.filter(item => item.menuId !== menuId))
-    } else {
-      setCart(prev =>
-        prev.map(item =>
-          item.menuId === menuId ? { ...item, qty } : item
-        )
-      )
-    }
-  }
-
-  const handleCheckout = async (customerData: {
-    customerName: string
-    orderType: "delivery" | "dine-in"
-    tableNumber?: string
-    phone?: string
-    notes?: string
-  }) => {
-    setSubmitting(true)
-    try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerName: customerData.customerName,
-          items: cart,
-          orderType: customerData.orderType,
-          tableNumber: customerData.tableNumber,
-          phone: customerData.phone,
-          notes: customerData.notes,
-        }),
-      })
-
-      if (res.ok) {
-        alert("✅ Order placed successfully!")
-        setCart([])
-        setShowCheckout(false)
-        setShowCart(false)
-      } else {
-        alert("❌ Failed to place order")
-      }
-    } catch (error) {
-      console.error("Error placing order:", error)
-      alert("❌ Error placing order")
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const cartTotal = cart.reduce((sum, item) => {
-    const menuItem = menus.find(m => m.id === item.menuId)
-    return sum + (menuItem?.price || 0) * item.qty
-  }, 0)
 
   return (
     <main className="min-h-screen bg-white pb-24 sm:pb-8">
@@ -92,17 +19,6 @@ export default function MenuPage() {
             <h1 className="text-3xl sm:text-4xl font-light text-gray-900 mb-2">Our Menu</h1>
             <p className="text-gray-600">Discover authentic flavors</p>
           </div>
-          <button
-            onClick={() => setShowCart(true)}
-            className="relative px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold"
-          >
-            🛒 Cart
-            {cart.length > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white px-2.5 py-1 rounded-full text-sm font-bold">
-                {cart.length}
-              </span>
-            )}
-          </button>
         </div>
       </div>
 
@@ -136,7 +52,6 @@ export default function MenuPage() {
               item={item}
               isHovered={hoveredId === item.id}
               onHover={setHoveredId}
-              onAddToCart={addToCart}
             />
           ))}
         </div>
@@ -147,31 +62,6 @@ export default function MenuPage() {
           </div>
         )}
       </div>
-
-      {/* Cart Sidebar */}
-      {showCart && (
-        <CartSidebar
-          cart={cart}
-          onClose={() => setShowCart(false)}
-          onUpdateCart={updateCart}
-          onCheckout={() => {
-            setShowCart(false)
-            setShowCheckout(true)
-          }}
-          total={cartTotal}
-        />
-      )}
-
-      {/* Checkout Modal */}
-      {showCheckout && (
-        <CheckoutModal
-          cart={cart}
-          total={cartTotal}
-          onClose={() => setShowCheckout(false)}
-          onSubmit={handleCheckout}
-          submitting={submitting}
-        />
-      )}
     </main>
   )
 }
@@ -180,12 +70,10 @@ function MenuItem({
   item,
   isHovered,
   onHover,
-  onAddToCart,
 }: {
   item: MenuItem
   isHovered: boolean
   onHover: (id: number | null) => void
-  onAddToCart: (menuId: number) => void
 }) {
   return (
     <div
@@ -203,12 +91,6 @@ function MenuItem({
 
         <div className="flex items-center justify-between mt-6">
           <div className="text-2xl sm:text-3xl font-bold text-orange-600">₿{item.price}</div>
-          <button
-            onClick={() => onAddToCart(item.id)}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg font-medium transition-colors text-sm sm:text-base"
-          >
-            Add
-          </button>
         </div>
       </div>
     </div>
