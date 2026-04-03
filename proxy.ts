@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   // Only block /orders routes from non-local IPs
   if (request.nextUrl.pathname.startsWith('/orders') || request.nextUrl.pathname.startsWith('/api/orders')) {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
