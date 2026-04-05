@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FoodHub - Order Authentic Asian Cuisine",
-  description: "Order delicious and authentic Asian food online. Fresh ingredients, quick delivery, and the best prices.",
+  title: "ร้านอาหารบ้านตา",
+  description: "ร้านอาหารบ้านตา นำเสนออาหารไทยและเอเชียรสจัดส่งถึงบ้าน สดใหม่ทุกคำ อร่อยทุกมื้อ",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

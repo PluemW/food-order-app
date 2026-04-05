@@ -65,7 +65,7 @@ export default function CheckoutModal({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-orange-100 p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-2xl sm:text-3xl font-bold text-orange-700">ชำระเงิน</h3>
@@ -104,7 +104,7 @@ export default function CheckoutModal({
 
           {orderType === "dine-in" && (
             <div>
-              <label className="block text-sm font-medium">Table Number (0 = รอรับ) <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-medium">เลขโต๊ะ (0 = รอรับ) <span className="text-red-500">*</span></label>
               <input
                 type="number"
                 min={0}
@@ -131,12 +131,12 @@ export default function CheckoutModal({
           )}
 
           <div>
-            <label className="block text-sm font-medium">Notes (Optional)</label>
+            <label className="block text-sm font-medium">หมายเหตุ (Notes)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full rounded border border-gray-300 p-2 focus:ring-2 focus:ring-orange-200"
-              placeholder="เช่น เพิ่มน้ำแข็ง"
+              placeholder="เช่น ขอไม่ใส่ผัก"
             />
           </div>
 

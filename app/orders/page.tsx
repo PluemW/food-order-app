@@ -4,6 +4,17 @@ import { useEffect, useState } from "react"
 import { menus, getMenuItemName, getMenuItemIcon } from "@/lib/data"
 import type { Order, OrderStatus } from "@/lib/data"
 
+const optionLabels: Record<string, string> = {
+  "no-spicy": "ไม่เผ็ด",
+  "less-spicy": "เผ็ดน้อย",
+  "spicy": "เผ็ดปกติ",
+  "extra-spicy": "เผ็ดมาก",
+  "no-sugar": "ไม่หวาน",
+  "less-sugar": "หวานน้อย",
+  "normal-sugar": "หวานปกติ",
+  "extra-sugar": "หวานมาก",
+}
+
 const statusColors: Record<OrderStatus, { bg: string; text: string; dot: string }> = {
   pending: { bg: "bg-yellow-100", text: "text-yellow-800", dot: "bg-yellow-500" },
   cooking: { bg: "bg-blue-100", text: "text-blue-800", dot: "bg-blue-500" },
@@ -20,10 +31,39 @@ const statusLabels: Record<OrderStatus, string> = {
 
 const statusFlow: OrderStatus[] = ["pending", "cooking", "waiting-for-payment", "completed"]
 
+// Set the daily rollover boundary here (local time).
+// Example: 0/0 = midnight, 5/30 = 5:30 AM reset boundary.
+const DAILY_RESET_HOUR = 0
+const DAILY_RESET_MINUTE = 0
+
+function getDayKey(timestamp: number) {
+  const date = new Date(timestamp)
+  const resetOffset = DAILY_RESET_HOUR * 60 + DAILY_RESET_MINUTE
+  const adjusted = new Date(date.getTime() - resetOffset * 60 * 1000)
+  return `${adjusted.getFullYear()}-${String(adjusted.getMonth() + 1).padStart(2, "0")}-${String(adjusted.getDate()).padStart(2, "0")}`
+}
+
+function isSameDay(timestampA: number, timestampB: number) {
+  return getDayKey(timestampA) === getDayKey(timestampB)
+}
+
+function getOrderTotal(order: Order) {
+  return order.items.reduce((sum, item) => {
+    const menuItem = menus.find((m) => m.id === item.menuId)
+    const basePrice = menuItem?.price || 0
+    const extraPrice = item.extraSize ? 10 : 0
+    return sum + (basePrice + extraPrice) * item.qty
+  }, 0)
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [isPolling, setIsPolling] = useState(true)
+  const [filterStatus, setFilterStatus] = useState<"all" | "preparing" | "payment" | "completed">("all")
+  const [savedNet, setSavedNet] = useState(0)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [now, setNow] = useState(Date.now())
 
   async function fetchOrders() {
     try {
@@ -37,9 +77,21 @@ export default function OrdersPage() {
     }
   }
 
+  async function fetchLog() {
+    try {
+      const res = await fetch("/api/orders/log")
+      if (!res.ok) throw new Error("Failed to fetch log")
+      const data = await res.json()
+      setSavedNet(data.savedNet ?? 0)
+    } catch (error) {
+      console.error("Error fetching order log:", error)
+    }
+  }
+
   // Initial fetch
   useEffect(() => {
     fetchOrders()
+    fetchLog()
   }, [])
 
   // Polling without loading state
@@ -73,14 +125,88 @@ export default function OrdersPage() {
   const preparingOrders = orders.filter((o) => o.status === "pending" || o.status === "cooking")
   const paymentOrders = orders.filter((o) => o.status === "waiting-for-payment")
   const completedOrders = orders.filter((o) => o.status === "completed")
+  const todayCompletedOrders = completedOrders.filter((o) => isSameDay(o.updatedAt, now))
+  const todayTotalNet = todayCompletedOrders.reduce((sum, order) => sum + getOrderTotal(order), 0)
+  const isResetDisabled = todayTotalNet === 0
+
+  async function handleConfirmReset() {
+    try {
+      const res = await fetch("/api/orders/log", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "archive", amount: todayTotalNet }),
+      })
+      if (!res.ok) throw new Error("Failed to update saved net")
+      const data = await res.json()
+      setSavedNet(data.savedNet ?? savedNet)
+      setShowResetConfirm(false)
+      await fetchLog()
+    } catch (error) {
+      console.error("Error updating order log:", error)
+      setShowResetConfirm(false)
+    }
+  }
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   return (
     <main className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 py-8 px-4 sm:px-6 md:px-8 shadow-sm sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 py-8 px-4 sm:px-6 md:px-8 shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto">
           <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">👨‍🍳 หน้าจอครัว</h1>
           <p className="text-gray-600">จัดการคำสั่งซื้อและติดตามการทำงานของอาหาร</p>
+        </div>
+      </div>
+
+      {/* Status Filter Bar */}
+      <div className="bg-white border-b-2 border-green-200 shadow-sm sticky top-[7rem] z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-3">
+          <div className="flex gap-2 sm:gap-4 overflow-x-auto pb-2">
+            <button
+              onClick={() => setFilterStatus("all")}
+              className={`px-4 sm:px-6 py-2 whitespace-nowrap rounded-lg font-medium text-sm transition-all ${
+                filterStatus === "all"
+                  ? "bg-green-200 text-gray-800 shadow-md"
+                  : "bg-gray-100 text-gray-700 hover:bg-green-100 border border-green-200"
+              }`}
+            >
+              ทั้งหมด
+            </button>
+            <button
+              onClick={() => setFilterStatus("preparing")}
+              className={`px-4 sm:px-6 py-2 whitespace-nowrap rounded-lg font-medium text-sm transition-all ${
+                filterStatus === "preparing"
+                  ? "bg-green-200 text-gray-800 shadow-md"
+                  : "bg-gray-100 text-gray-700 hover:bg-green-100 border border-green-200"
+              }`}
+            >
+              กำลังทำ
+            </button>
+            <button
+              onClick={() => setFilterStatus("payment")}
+              className={`px-4 sm:px-6 py-2 whitespace-nowrap rounded-lg font-medium text-sm transition-all ${
+                filterStatus === "payment"
+                  ? "bg-green-200 text-gray-800 shadow-md"
+                  : "bg-gray-100 text-gray-700 hover:bg-green-100 border border-green-200"
+              }`}
+            >
+              รอชำระเงิน
+            </button>
+            <button
+              onClick={() => setFilterStatus("completed")}
+              className={`px-4 sm:px-6 py-2 whitespace-nowrap rounded-lg font-medium text-sm transition-all ${
+                filterStatus === "completed"
+                  ? "bg-green-200 text-gray-800 shadow-md"
+                  : "bg-gray-100 text-gray-700 hover:bg-green-100 border border-green-200"
+              }`}
+            >
+              เสร็จสิ้น
+            </button>
+          </div>
         </div>
       </div>
 
@@ -95,49 +221,186 @@ export default function OrdersPage() {
             <p className="text-gray-500 text-lg">ยังไม่มีรายการสั่งซื้อ</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {/* Left column: pending + cooking */}
-            <div>
-              <h2 className="text-xl font-bold text-orange-700 mb-3">คำสั่งซื้อที่กำลังทำ</h2>
-              {preparingOrders.length === 0 ? (
-                <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อที่กำลังรอหรือกำลังทำ</div>
-              ) : (
-                <div className="space-y-4">
-                  {preparingOrders.map((order) => (
-                    <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Right column: waiting-for-payment + completed */}
-            <div>
-              <h2 className="text-xl font-bold text-indigo-700 mb-3">รอชำระเงิน / เสร็จสิ้น</h2>
-              {paymentOrders.length === 0 && completedOrders.length === 0 ? (
-                <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">
-                  ไม่มีคำสั่งซื้อรอชำระเงินหรือเสร็จสิ้น
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {paymentOrders.map((order) => (
-                    <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
-                  ))}
-                  {completedOrders.length > 0 && (
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-green-700 mb-2">ประวัติคำสั่งซื้อที่เสร็จสิ้น</h3>
-                      <div className="space-y-3">
-                        {completedOrders.map((order) => (
-                          <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
-                        ))}
+          <>
+            {filterStatus === "all" && (
+              <>
+                <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-6">
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                      {/* Left column: pending + cooking */}
+                      <div>
+                        <h2 className="text-xl font-bold text-green-700 mb-3">คำสั่งซื้อที่กำลังทำ</h2>
+                        {preparingOrders.length === 0 ? (
+                          <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อที่กำลังรอหรือกำลังทำ</div>
+                        ) : (
+                          <div className="space-y-4">
+                            {preparingOrders.map((order) => (
+                              <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                            ))}
+                          </div>
+                        )}
                       </div>
+
+                      {/* Right column: waiting-for-payment */}
+                      <div>
+                        <h2 className="text-xl font-bold text-green-700 mb-3">รอชำระเงิน</h2>
+                        {paymentOrders.length === 0 ? (
+                          <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">
+                            ไม่มีคำสั่งซื้อรอชำระเงิน
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {paymentOrders.map((order) => (
+                              <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-3xl border border-green-200 p-6 shadow-sm">
+                      <h3 className="text-lg font-semibold text-green-700 mb-2">ยอดสุทธิวันนี้</h3>
+                      <p className="text-4xl font-bold text-gray-900">฿{todayTotalNet}</p>
+                      <p className="text-sm text-gray-500 mt-2">รวมคำสั่งซื้อที่เสร็จสิ้นในวันนี้</p>
+                    </div>
+                    <div className="bg-white rounded-3xl border border-amber-200 p-6 shadow-sm">
+                      <h3 className="text-lg font-semibold text-amber-700 mb-2">ยอดสะสมเก่า</h3>
+                      <p className="text-4xl font-bold text-gray-900">฿{savedNet}</p>
+                      <p className="text-sm text-gray-500 mt-2">เก็บยอดสุทธิของคำสั่งซื้อเก่าจนกดรีเซ็ต</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowResetConfirm(true)}
+                        disabled={isResetDisabled}
+                        className={`mt-4 w-full px-4 py-3 rounded-lg font-semibold transition-colors ${isResetDisabled ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-red-500 text-white hover:bg-red-600"}`}
+                      >
+                        ย้ายยอดวันนี้ไปยังยอดสะสม
+                      </button>
+                      {isResetDisabled && (
+                        <p className="mt-2 text-sm text-gray-500">ไม่มียอดสุทธิวันนี้สำหรับรีเซ็ต</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Completed Orders Section */}
+                {todayCompletedOrders.length > 0 ? (
+                  <div className="mt-8 pt-8 border-t-2 border-gray-200">
+                    <h2 className="text-xl font-bold text-green-700 mb-3">ประวัติคำสั่งซื้อที่เสร็จสิ้นวันนี้</h2>
+                    <div className="space-y-4">
+                      {todayCompletedOrders.map((order) => (
+                        <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-8 pt-8 border-t-2 border-gray-200 p-6 bg-white rounded-3xl border border-gray-200 text-gray-500">
+                    ไม่มีรายการเสร็จสิ้นในวันนี้ หรือรายการเก่าถูกย้ายไปที่ยอดสะสม
+                  </div>
+                )}
+              </>
+            )}
+
+            {filterStatus === "preparing" && (
+              <div>
+                <h2 className="text-xl font-bold text-green-700 mb-3">คำสั่งซื้อที่กำลังทำ</h2>
+                {preparingOrders.length === 0 ? (
+                  <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อที่กำลังรอหรือกำลังทำ</div>
+                ) : (
+                  <div className="space-y-4">
+                    {preparingOrders.map((order) => (
+                      <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {filterStatus === "payment" && (
+              <div>
+                <h2 className="text-xl font-bold text-green-700 mb-3">รอชำระเงิน</h2>
+                {paymentOrders.length === 0 ? (
+                  <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อรอชำระเงิน</div>
+                ) : (
+                  <div className="space-y-4">
+                    {paymentOrders.map((order) => (
+                      <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {filterStatus === "completed" && (
+              <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
+                <div>
+                  <h2 className="text-xl font-bold text-green-700 mb-3">เสร็จสิ้น</h2>
+                  {todayCompletedOrders.length === 0 ? (
+                    <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อที่เสร็จสิ้นในวันนี้</div>
+                  ) : (
+                    <div className="space-y-4">
+                      {todayCompletedOrders.map((order) => (
+                        <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
+                      ))}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
+                <div className="space-y-4">
+                  <div className="bg-white rounded-3xl border border-green-200 p-6 shadow-sm">
+                    <h3 className="text-lg font-semibold text-green-700 mb-2">ยอดสุทธิวันนี้</h3>
+                    <p className="text-4xl font-bold text-gray-900">฿{todayTotalNet}</p>
+                    <p className="text-sm text-gray-500 mt-2">รวมคำสั่งซื้อที่เสร็จสิ้นในวันนี้</p>
+                  </div>
+                  <div className="bg-white rounded-3xl border border-amber-200 p-6 shadow-sm">
+                    <h3 className="text-lg font-semibold text-amber-700 mb-2">ยอดสะสมเก่า</h3>
+                    <p className="text-4xl font-bold text-gray-900">฿{savedNet}</p>
+                    <p className="text-sm text-gray-500 mt-2">เก็บยอดสุทธิของคำสั่งซื้อเก่าจนกดรีเซ็ต</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowResetConfirm(true)}
+                      disabled={isResetDisabled}
+                      className={`mt-4 w-full px-4 py-3 rounded-lg font-semibold transition-colors ${isResetDisabled ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-red-500 text-white hover:bg-red-600"}`}
+                    >
+                      ย้ายยอดวันนี้ไปยังยอดสะสม
+                    </button>
+                    {isResetDisabled && (
+                      <p className="mt-2 text-sm text-gray-500">ไม่มียอดสุทธิวันนี้สำหรับรีเซ็ต</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
+
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl border-l-4 border-green-600 bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-semibold text-gray-900 mb-3">ยืนยันการย้ายยอดวันนี้</h3>
+            <p className="text-gray-600 mb-4">
+              คุณแน่ใจหรือไม่ว่าจะย้ายยอดสุทธิของวันนี้ไปยังยอดสะสมเก่า แล้วล้างรายการคำสั่งซื้อที่เสร็จสิ้นวันนี้?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                className="flex-1 rounded-lg border border-gray-200 px-4 py-3 bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReset}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-3 text-white hover:bg-red-700 transition"
+              >
+                ยืนยัน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
@@ -168,9 +431,9 @@ function OrderCard({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow">
+    <div className="bg-white rounded-xl border border-green-200 overflow-hidden hover:shadow-lg transition-shadow">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 border-b border-gray-100">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 border-b border-green-100">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
             <div className={`px-3 py-1 rounded-full text-sm font-semibold ${colors.bg} ${colors.text}`}>
@@ -213,7 +476,12 @@ function OrderCard({
                 <div>
                   <p className="font-medium text-gray-900">
                     {getMenuItemName(item.menuId)}
-                    {item.extraSize && <span className="text-orange-600 text-sm"> (พิเศษ)</span>}
+                    {item.extraSize && (
+                      <span className="text-orange-600 text-sm"> (ใหญ่พิเศษ)</span>
+                    )}
+                    {item.option && (
+                      <span className="text-orange-600 text-sm"> ({optionLabels[item.option] ?? item.option})</span>
+                    )}
                   </p>
                 </div>
               </div>

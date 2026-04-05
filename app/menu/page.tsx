@@ -1,59 +1,133 @@
 "use client"
 
-import { useState } from "react"
-import { menus, categories } from "@/lib/data"
-import type { MenuItem } from "@/lib/data"
+import { useEffect, useState } from "react"
+import { menus, categories, type MenuItem } from "@/lib/data"
 import CartSidebar from "@/app/components/CartSidebar"
 import CheckoutModal from "@/app/components/CheckoutModal"
 
+const spiceOptions = [
+  { value: "no-spicy", label: "ไม่เผ็ด" },
+  { value: "less-spicy", label: "เผ็ดน้อย" },
+  { value: "spicy", label: "เผ็ดปกติ" },
+  { value: "extra-spicy", label: "เผ็ดมาก" },
+]
+
+const sweetnessOptions = [
+  { value: "no-sugar", label: "ไม่หวาน" },
+  { value: "less-sugar", label: "หวานน้อย" },
+  { value: "normal-sugar", label: "หวานปกติ" },
+  { value: "extra-sugar", label: "หวานมาก" },
+]
+
+const optionLabels: Record<string, string> = {
+  "no-spicy": "ไม่เผ็ด",
+  "less-spicy": "เผ็ดน้อย",
+  "spicy": "เผ็ดปกติ",
+  "extra-spicy": "เผ็ดมาก",
+  "no-sugar": "ไม่หวาน",
+  "less-sugar": "หวานน้อย",
+  "normal-sugar": "หวานปกติ",
+  "extra-sugar": "หวานมาก",
+}
+
+type CartItem = {
+  menuId: number
+  qty: number
+  option?: string
+  extraSize?: boolean
+}
+
+type CustomerData = {
+  customerName: string
+  orderType: "delivery" | "dine-in"
+  tableNumber?: string
+  phone?: string
+  notes?: string
+}
+
+function getDefaultOption(item: MenuItem) {
+  if (item.requiresSpiceLevel) return "spicy"
+  if (item.requiresSweetnessLevel) return "normal-sugar"
+  return undefined
+}
+
+function getDefaultExtraSize(item: MenuItem) {
+  return item.requiresExtraSize ? false : undefined
+}
+
 export default function MenuPage() {
-  const [activeCategory, setActiveCategory] = useState<string>("main")
-  const [hoveredId, setHoveredId] = useState<number | null>(null)
-  const [cart, setCart] = useState<{ menuId: number; qty: number; extraSize?: boolean }[]>([])
+  const [activeCategory, setActiveCategory] = useState<string>("main-dish")
+  const [cart, setCart] = useState<CartItem[]>([])
   const [showCart, setShowCart] = useState(false)
   const [showCheckout, setShowCheckout] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [selectedOptions, setSelectedOptions] = useState<Record<number, string>>({})
+  const [selectedExtraSizes, setSelectedExtraSizes] = useState<Record<number, boolean>>({})
+  const [notification, setNotification] = useState<{
+    type: "success" | "error"
+    title: string
+    message: string
+  } | null>(null)
 
-  const filteredItems = menus.filter(item => item.category === activeCategory)
+  const filteredItems = menus.filter((item) => item.category === activeCategory)
 
-  const addToCart = (menuId: number, extraSize: boolean = false) => {
-    setCart(prev => {
-      const existing = prev.find(item => item.menuId === menuId && item.extraSize === extraSize)
+  const getSelectedOption = (item: MenuItem) => {
+    if (!item.requiresSpiceLevel && !item.requiresSweetnessLevel) return undefined
+    return selectedOptions[item.id] ?? getDefaultOption(item)
+  }
+
+  const getSelectedExtraSize = (item: MenuItem) => {
+    if (!item.requiresExtraSize) return undefined
+    return selectedExtraSizes[item.id] ?? false
+  }
+
+  const handleOptionChange = (menuId: number, option: string) => {
+    setSelectedOptions((prev) => ({ ...prev, [menuId]: option }))
+  }
+
+  const handleExtraSizeChange = (menuId: number, extraSize: boolean) => {
+    setSelectedExtraSizes((prev) => ({ ...prev, [menuId]: extraSize }))
+  }
+
+  const addToCart = (menuId: number, option?: string, extraSize?: boolean) => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.menuId === menuId && item.option === option && item.extraSize === extraSize)
       if (existing) {
-        return prev.map(item =>
-          item.menuId === menuId && item.extraSize === extraSize ? { ...item, qty: item.qty + 1 } : item
+        return prev.map((item) =>
+          item.menuId === menuId && item.option === option && item.extraSize === extraSize
+            ? { ...item, qty: item.qty + 1 }
+            : item
         )
       }
-      return [...prev, { menuId, qty: 1, extraSize }]
+      return [...prev, { menuId, qty: 1, option, extraSize }]
     })
   }
 
-  const updateCart = (menuId: number, qty: number, extraSize?: boolean) => {
+  const updateCart = (menuId: number, qty: number, option?: string, extraSize?: boolean) => {
     if (qty <= 0) {
-      setCart(prev => prev.filter(item => !(item.menuId === menuId && item.extraSize === extraSize)))
+      setCart((prev) => prev.filter((item) => !(item.menuId === menuId && item.option === option && item.extraSize === extraSize)))
     } else {
-      setCart(prev =>
-        prev.map(item =>
-          item.menuId === menuId && item.extraSize === extraSize ? { ...item, qty } : item
+      setCart((prev) =>
+        prev.map((item) =>
+          item.menuId === menuId && item.option === option && item.extraSize === extraSize ? { ...item, qty } : item
         )
       )
     }
   }
 
   const cartTotal = cart.reduce((sum, item) => {
-    const menuItem = menus.find(m => m.id === item.menuId)
-    const basePrice = menuItem?.price || 0
+    const menuItem = menus.find((m) => m.id === item.menuId)
     const extraPrice = item.extraSize ? 10 : 0
-    return sum + (basePrice + extraPrice) * item.qty
+    return sum + ((menuItem?.price || 0) + extraPrice) * item.qty
   }, 0)
 
-  const handleCheckout = async (customerData: {
-    customerName: string
-    orderType: "delivery" | "dine-in"
-    tableNumber?: string
-    phone?: string
-    notes?: string
-  }) => {
+  useEffect(() => {
+    if (!notification) return
+    const timer = setTimeout(() => setNotification(null), 4000)
+    return () => clearTimeout(timer)
+  }, [notification])
+
+  const handleCheckout = async (customerData: CustomerData) => {
     setSubmitting(true)
     try {
       const res = await fetch("/api/orders", {
@@ -70,35 +144,51 @@ export default function MenuPage() {
       })
 
       if (res.ok) {
-        alert("✅ Order placed successfully!")
+        setNotification({
+          type: "success",
+          title: "สั่งซื้อสำเร็จ",
+          message: "คำสั่งซื้อของคุณถูกส่งไปยังครัวแล้ว"
+        })
         setCart([])
         setShowCheckout(false)
         setShowCart(false)
       } else {
-        alert("❌ Failed to place order")
+        setNotification({
+          type: "error",
+          title: "เกิดข้อผิดพลาด",
+          message: "ไม่สามารถส่งคำสั่งซื้อได้ กรุณาลองอีกครั้ง"
+        })
       }
     } catch (error) {
       console.error("Error placing order:", error)
-      alert("❌ Error placing order")
+      setNotification({
+        type: "error",
+        title: "เกิดข้อผิดพลาด",
+        message: "เกิดปัญหาในการส่งคำสั่งซื้อ กรุณาลองใหม่อีกครั้ง"
+      })
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-24 sm:pb-8 text-gray-800 antialiased">
+    <main className="min-h-screen bg-white pb-24 sm:pb-8 text-gray-800 antialiased">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-200 via-amber-200 to-yellow-100 border-b border-orange-300 py-8 px-4 sm:px-6 md:px-8 sticky top-0 z-30 backdrop-blur-sm shadow-md">
+      <div className="sticky top-0 z-40 bg-white border-b-4 border-green-600 py-6 px-4 sm:px-6 md:px-8 shadow-md">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-4xl sm:text-5xl font-semibold text-orange-900 mb-1">เมนูอาหารของเรา</h1>
-            <p className="text-gray-600">ค้นหารสชาติดั้งเดิมอร่อยทุกเมนู</p>
+          <div className="flex items-center gap-3">
+            <img 
+              src="/logo.png" 
+              alt="Restaurant Logo" 
+              className="h-16 w-auto sm:h-20"
+            />
+            <h1 className="text-2xl sm:text-3xl font-bold text-green-700">ร้านอาหารบ้านตา</h1>
           </div>
           <button
             onClick={() => setShowCart(true)}
-            className="relative px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold"
+            className="relative px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold"
           >
-            🛒 รายการอาหาร
+            รายการอาหาร
             {cart.length > 0 && (
               <span className="absolute -top-2 -right-2 bg-red-500 text-white px-2.5 py-1 rounded-full text-sm font-bold">
                 {cart.length}
@@ -109,8 +199,8 @@ export default function MenuPage() {
       </div>
 
       {/* Category Navigation */}
-      <div className="sticky top-20 z-20 bg-white border-b border-gray-100 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-4">
+      <div className="sticky top-24 z-30 bg-white border-b-2 border-green-200 shadow-lg">
+        <div className="max-w-6xl mx-auto px-4 sm:px-5 md:px-8 py-3">
           <div className="flex gap-2 sm:gap-4 overflow-x-auto pb-2">
             {categories.map((cat) => (
               <button
@@ -118,8 +208,8 @@ export default function MenuPage() {
                 onClick={() => setActiveCategory(cat.key)}
                 className={`px-4 sm:px-6 py-2 whitespace-nowrap rounded-lg font-medium text-sm transition-all ${
                   activeCategory === cat.key
-                    ? "bg-orange-500 text-white shadow-md"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    ? "bg-green-300 text-gray-800 shadow-md"
+                    : "bg-gray-30 text-gray-700 hover:bg-green-100 border border-green-200"
                 }`}
               >
                 {cat.label}
@@ -130,15 +220,17 @@ export default function MenuPage() {
       </div>
 
       {/* Menu Items Grid */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-5 md:px-8 py-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredItems.map((item) => (
             <MenuItem
               key={item.id}
               item={item}
-              isHovered={hoveredId === item.id}
-              onHover={setHoveredId}
-              onAddToCart={addToCart}
+              selectedOption={getSelectedOption(item)}
+              selectedExtraSize={getSelectedExtraSize(item)}
+              onOptionChange={handleOptionChange}
+              onExtraSizeChange={handleExtraSizeChange}
+              onAddToCart={() => addToCart(item.id, getSelectedOption(item), getSelectedExtraSize(item))}
             />
           ))}
         </div>
@@ -174,63 +266,127 @@ export default function MenuPage() {
           submitting={submitting}
         />
       )}
+
+      {notification && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-md rounded-3xl border-l-4 bg-white p-6 shadow-2xl ${notification.type === "success" ? "border-green-600" : "border-red-600"}`}>
+            <div className="flex items-start gap-4">
+              <div className={`text-3xl ${notification.type === "success" ? "text-green-600" : "text-red-600"}`}>
+                {notification.type === "success" ? "✅" : "❌"}
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">{notification.title}</h2>
+                <p className="mt-2 text-gray-600">{notification.message}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setNotification(null)}
+              className="mt-6 w-full rounded-lg bg-red-600 px-4 py-3 text-white hover:bg-red-700 transition"
+            >
+              ปิด
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
 
 function MenuItem({
   item,
-  isHovered,
-  onHover,
+  selectedOption,
+  selectedExtraSize,
+  onOptionChange,
+  onExtraSizeChange,
   onAddToCart,
 }: {
   item: MenuItem
-  isHovered: boolean
-  onHover: (id: number | null) => void
-  onAddToCart: (menuId: number, extraSize?: boolean) => void
+  selectedOption?: string
+  selectedExtraSize?: boolean
+  onOptionChange: (menuId: number, option: string) => void
+  onExtraSizeChange: (menuId: number, extraSize: boolean) => void
+  onAddToCart: () => void
 }) {
-  const isMainDish = item.category === "main"
+  const optionChoices = item.requiresSpiceLevel
+    ? spiceOptions
+    : item.requiresSweetnessLevel
+    ? sweetnessOptions
+    : []
+  const currentOption =
+    selectedOption ??
+    (item.requiresSpiceLevel ? "spicy" : item.requiresSweetnessLevel ? "normal-sugar" : undefined)
 
   return (
-    <div
-      onMouseEnter={() => onHover(item.id)}
-      onMouseLeave={() => onHover(null)}
-      className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300"
-    >
-      <div className="h-40 bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center text-6xl sm:text-5xl md:text-6xl group-hover:scale-110 transition-transform duration-300">
-        {item.icon}
-      </div>
-
-      <div className="p-5 sm:p-6">
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900 leading-tight">{item.name}</h3>
-        <p className="text-sm text-gray-600 mt-2 line-clamp-2">{item.description}</p>
-
-        <div className="flex items-center justify-between mt-6">
-          <div className="text-2xl sm:text-3xl font-bold text-orange-600">฿{item.price}</div>
-          {isMainDish ? (
-            <div className="flex gap-2">
-              <button
-                onClick={() => onAddToCart(item.id, false)}
-                className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg font-medium transition-colors text-xs sm:text-sm"
-              >
-                เพิ่มปกติ
-              </button>
-              <button
-                onClick={() => onAddToCart(item.id, true)}
-                className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg font-medium transition-colors text-xs sm:text-sm"
-              >
-                พิเศษ +10฿
-              </button>
+    <div className="bg-white rounded-3xl border border-green-200 overflow-hidden shadow-sm hover:shadow-lg transition-all">
+      <div className="p-4">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-900">{item.name}</h3>
             </div>
-          ) : (
-            <button
-              onClick={() => onAddToCart(item.id, false)}
-              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg font-medium transition-colors text-sm sm:text-base"
-            >
-              เพิ่ม
-            </button>
+            <span className="text-amber-600 text-base font-bold">฿{item.price}</span>
+          </div>
+
+          {optionChoices.length > 0 && (
+            <div className="rounded-3xl bg-green-50 p-3">
+              <div className="flex items-center justify-between text-sm font-medium text-gray-700 mb-2">
+                <span>{item.requiresSpiceLevel ? "เลือกระดับความเผ็ด" : "ปรับระดับความหวาน"}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {optionChoices.map((choice) => (
+                  <button
+                    key={choice.value}
+                    type="button"
+                    onClick={() => onOptionChange(item.id, choice.value)}
+                    className={`rounded-2xl px-3 py-2 text-sm font-medium transition ${
+                      currentOption === choice.value ? "bg-green-500 text-white" : "bg-white text-gray-700 border border-green-200"
+                    }`}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {item.requiresExtraSize && (
+            <div className="rounded-3xl bg-green-50 p-3">
+              <div className="flex items-center justify-between text-sm font-medium text-gray-700 mb-2">
+                <span>ขนาด</span>
+                <span className="text-amber-600">+10฿</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onExtraSizeChange(item.id, false)}
+                  className={`rounded-2xl px-3 py-2 text-sm font-medium transition ${
+                    !selectedExtraSize ? "bg-green-500 text-white" : "bg-white text-gray-700 border border-green-200"
+                  }`}
+                >
+                  ปกติ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onExtraSizeChange(item.id, true)}
+                  className={`rounded-2xl px-3 py-2 text-sm font-medium transition ${
+                    selectedExtraSize ? "bg-green-500 text-white" : "bg-white text-gray-700 border border-green-200"
+                  }`}
+                >
+                  พิเศษ
+                </button>
+              </div>
+            </div>
           )}
         </div>
+      </div>
+
+      <div className="border-t border-green-100 p-4">
+        <button
+          onClick={onAddToCart}
+          className="w-full rounded-2xl bg-red-500 px-3 py-2.5 text-white font-semibold hover:bg-red-600 transition-colors"
+        >
+          เพิ่มลงตะกร้า
+        </button>
       </div>
     </div>
   )
