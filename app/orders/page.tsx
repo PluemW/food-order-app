@@ -72,45 +72,18 @@ export default function OrdersPage() {
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [soundVolume, setSoundVolume] = useState(0.7)
 
-  // Play notification sound
+  // Play notification sound from MP3 file
   function playNotificationSound() {
     if (!soundEnabled) return
     
     try {
-      const AudioContext = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      const audioContext = new AudioContext()
-      const now = audioContext.currentTime
-      
-      // Create oscillators for a pleasant bell-like notification sound
-      // Lower note - main tone
-      const osc1 = audioContext.createOscillator()
-      const gain1 = audioContext.createGain()
-      osc1.connect(gain1)
-      gain1.connect(audioContext.destination)
-      osc1.type = "sine"
-      osc1.frequency.value = 800 // Hz
-      
-      // Higher note - harmonics
-      const osc2 = audioContext.createOscillator()
-      const gain2 = audioContext.createGain()
-      osc2.connect(gain2)
-      gain2.connect(audioContext.destination)
-      osc2.type = "sine"
-      osc2.frequency.value = 1200 // Hz
-      
-      // Volume envelope
-      gain1.gain.setValueAtTime(soundVolume * 0.3, now)
-      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.5)
-      
-      gain2.gain.setValueAtTime(soundVolume * 0.2, now)
-      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.4)
-      
-      osc1.start(now)
-      osc1.stop(now + 0.5)
-      osc2.start(now)
-      osc2.stop(now + 0.4)
+      const audio = new Audio("/bellsound.mp3")
+      audio.volume = soundVolume
+      audio.play().catch((error) => {
+        console.error("Error playing sound:", error)
+      })
     } catch (error) {
-      console.error("Error playing notification sound:", error)
+      console.error("Error creating audio element:", error)
     }
   }
 
