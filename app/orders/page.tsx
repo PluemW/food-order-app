@@ -31,22 +31,6 @@ const statusLabels: Record<OrderStatus, string> = {
 
 const statusFlow: OrderStatus[] = ["pending", "cooking", "waiting-for-payment", "completed"]
 
-// Set the daily rollover boundary here (local time).
-// Example: 0/0 = midnight, 5/30 = 5:30 AM reset boundary.
-const DAILY_RESET_HOUR = 0
-const DAILY_RESET_MINUTE = 0
-
-function getDayKey(timestamp: number) {
-  const date = new Date(timestamp)
-  const resetOffset = DAILY_RESET_HOUR * 60 + DAILY_RESET_MINUTE
-  const adjusted = new Date(date.getTime() - resetOffset * 60 * 1000)
-  return `${adjusted.getFullYear()}-${String(adjusted.getMonth() + 1).padStart(2, "0")}-${String(adjusted.getDate()).padStart(2, "0")}`
-}
-
-function isSameDay(timestampA: number, timestampB: number) {
-  return getDayKey(timestampA) === getDayKey(timestampB)
-}
-
 function getOrderTotal(order: Order) {
   return order.items.reduce((sum, item) => {
     const menuItem = menus.find((m) => m.id === item.menuId)
@@ -63,7 +47,6 @@ export default function OrdersPage() {
   const [filterStatus, setFilterStatus] = useState<"all" | "preparing" | "payment" | "completed">("all")
   const [savedNet, setSavedNet] = useState(0)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const [now, setNow] = useState(Date.now())
 
   async function fetchOrders() {
     try {
@@ -125,39 +108,49 @@ export default function OrdersPage() {
   const preparingOrders = orders.filter((o) => o.status === "pending" || o.status === "cooking")
   const paymentOrders = orders.filter((o) => o.status === "waiting-for-payment")
   const completedOrders = orders.filter((o) => o.status === "completed")
-  const todayCompletedOrders = completedOrders.filter((o) => isSameDay(o.updatedAt, now))
-  const todayTotalNet = todayCompletedOrders.reduce((sum, order) => sum + getOrderTotal(order), 0)
-  const isResetDisabled = todayTotalNet === 0
+  const totalNet = savedNet + completedOrders.reduce((sum, order) => sum + getOrderTotal(order), 0)
+  const isResetDisabled = totalNet === 0
 
   async function handleConfirmReset() {
     try {
-      const res = await fetch("/api/orders/log", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "archive", amount: todayTotalNet }),
-      })
-      if (!res.ok) throw new Error("Failed to update saved net")
-      const data = await res.json()
-      setSavedNet(data.savedNet ?? savedNet)
+      const [logRes, ordersRes] = await Promise.all([
+        fetch("/api/orders/log", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "clear" }),
+        }),
+        fetch("/api/orders", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "clearCompleted" }),
+        }),
+      ])
+
+      if (!logRes.ok || !ordersRes.ok) {
+        throw new Error("Failed to reset total net and history")
+      }
+
+      const logData = await logRes.json()
+      const ordersData = await ordersRes.json()
+
+      setSavedNet(logData.savedNet ?? 0)
+      setOrders(ordersData.remainingOrders ?? [])
       setShowResetConfirm(false)
-      await fetchLog()
     } catch (error) {
-      console.error("Error updating order log:", error)
+      console.error("Error resetting order log:", error)
       setShowResetConfirm(false)
     }
   }
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60000)
-    return () => clearInterval(timer)
-  }, [])
 
   return (
     <main className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 py-8 px-4 sm:px-6 md:px-8 shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">👨‍🍳 หน้าจอครัว</h1>
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Logo" className="h-15 w-15 rounded-full object-cover" />
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">หน้าจอครัว</h1>
+          </div>
           <p className="text-gray-600">จัดการคำสั่งซื้อและติดตามการทำงานของอาหาร</p>
         </div>
       </div>
@@ -261,42 +254,37 @@ export default function OrdersPage() {
 
                   <div className="space-y-4">
                     <div className="bg-white rounded-3xl border border-green-200 p-6 shadow-sm">
-                      <h3 className="text-lg font-semibold text-green-700 mb-2">ยอดสุทธิวันนี้</h3>
-                      <p className="text-4xl font-bold text-gray-900">฿{todayTotalNet}</p>
-                      <p className="text-sm text-gray-500 mt-2">รวมคำสั่งซื้อที่เสร็จสิ้นในวันนี้</p>
-                    </div>
-                    <div className="bg-white rounded-3xl border border-amber-200 p-6 shadow-sm">
-                      <h3 className="text-lg font-semibold text-amber-700 mb-2">ยอดสะสมเก่า</h3>
-                      <p className="text-4xl font-bold text-gray-900">฿{savedNet}</p>
-                      <p className="text-sm text-gray-500 mt-2">เก็บยอดสุทธิของคำสั่งซื้อเก่าจนกดรีเซ็ต</p>
+                      <h3 className="text-lg font-semibold text-green-700 mb-2">ยอดสุทธิ</h3>
+                      <p className="text-4xl font-bold text-gray-900">฿{totalNet}</p>
+                      <p className="text-sm text-gray-500 mt-2">รวมยอดคำสั่งซื้อทั้งหมดในประวัติและยอดเก่า</p>
                       <button
                         type="button"
                         onClick={() => setShowResetConfirm(true)}
                         disabled={isResetDisabled}
                         className={`mt-4 w-full px-4 py-3 rounded-lg font-semibold transition-colors ${isResetDisabled ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-red-500 text-white hover:bg-red-600"}`}
                       >
-                        ย้ายยอดวันนี้ไปยังยอดสะสม
+                        รีเซ็ตยอดสุทธิ และล้างประวัติ
                       </button>
                       {isResetDisabled && (
-                        <p className="mt-2 text-sm text-gray-500">ไม่มียอดสุทธิวันนี้สำหรับรีเซ็ต</p>
+                        <p className="mt-2 text-sm text-gray-500">ไม่มียอดสุทธิสำหรับรีเซ็ต</p>
                       )}
                     </div>
                   </div>
                 </div>
 
                 {/* Completed Orders Section */}
-                {todayCompletedOrders.length > 0 ? (
+                {completedOrders.length > 0 ? (
                   <div className="mt-8 pt-8 border-t-2 border-gray-200">
-                    <h2 className="text-xl font-bold text-green-700 mb-3">ประวัติคำสั่งซื้อที่เสร็จสิ้นวันนี้</h2>
+                    <h2 className="text-xl font-bold text-green-700 mb-3">ประวัติคำสั่งซื้อที่เสร็จสิ้น</h2>
                     <div className="space-y-4">
-                      {todayCompletedOrders.map((order) => (
+                      {completedOrders.map((order) => (
                         <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
                       ))}
                     </div>
                   </div>
                 ) : (
                   <div className="mt-8 pt-8 border-t-2 border-gray-200 p-6 bg-white rounded-3xl border border-gray-200 text-gray-500">
-                    ไม่มีรายการเสร็จสิ้นในวันนี้ หรือรายการเก่าถูกย้ายไปที่ยอดสะสม
+                    ไม่มีคำสั่งซื้อที่เสร็จสิ้นในตอนนี้
                   </div>
                 )}
               </>
@@ -336,11 +324,11 @@ export default function OrdersPage() {
               <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
                 <div>
                   <h2 className="text-xl font-bold text-green-700 mb-3">เสร็จสิ้น</h2>
-                  {todayCompletedOrders.length === 0 ? (
-                    <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อที่เสร็จสิ้นในวันนี้</div>
+                  {completedOrders.length === 0 ? (
+                    <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อที่เสร็จสิ้นในตอนนี้</div>
                   ) : (
                     <div className="space-y-4">
-                      {todayCompletedOrders.map((order) => (
+                      {completedOrders.map((order) => (
                         <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
                       ))}
                     </div>
@@ -348,24 +336,19 @@ export default function OrdersPage() {
                 </div>
                 <div className="space-y-4">
                   <div className="bg-white rounded-3xl border border-green-200 p-6 shadow-sm">
-                    <h3 className="text-lg font-semibold text-green-700 mb-2">ยอดสุทธิวันนี้</h3>
-                    <p className="text-4xl font-bold text-gray-900">฿{todayTotalNet}</p>
-                    <p className="text-sm text-gray-500 mt-2">รวมคำสั่งซื้อที่เสร็จสิ้นในวันนี้</p>
-                  </div>
-                  <div className="bg-white rounded-3xl border border-amber-200 p-6 shadow-sm">
-                    <h3 className="text-lg font-semibold text-amber-700 mb-2">ยอดสะสมเก่า</h3>
-                    <p className="text-4xl font-bold text-gray-900">฿{savedNet}</p>
-                    <p className="text-sm text-gray-500 mt-2">เก็บยอดสุทธิของคำสั่งซื้อเก่าจนกดรีเซ็ต</p>
+                    <h3 className="text-lg font-semibold text-green-700 mb-2">ยอดสุทธิ</h3>
+                    <p className="text-4xl font-bold text-gray-900">฿{totalNet}</p>
+                    <p className="text-sm text-gray-500 mt-2">รวมยอดคำสั่งซื้อทั้งหมดในประวัติและยอดเก่า</p>
                     <button
                       type="button"
                       onClick={() => setShowResetConfirm(true)}
                       disabled={isResetDisabled}
                       className={`mt-4 w-full px-4 py-3 rounded-lg font-semibold transition-colors ${isResetDisabled ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-red-500 text-white hover:bg-red-600"}`}
                     >
-                      ย้ายยอดวันนี้ไปยังยอดสะสม
+                      รีเซ็ตยอดสุทธิ และล้างประวัติ
                     </button>
                     {isResetDisabled && (
-                      <p className="mt-2 text-sm text-gray-500">ไม่มียอดสุทธิวันนี้สำหรับรีเซ็ต</p>
+                      <p className="mt-2 text-sm text-gray-500">ไม่มียอดสุทธิสำหรับรีเซ็ต</p>
                     )}
                   </div>
                 </div>
@@ -378,9 +361,9 @@ export default function OrdersPage() {
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-3xl border-l-4 border-green-600 bg-white p-6 shadow-2xl">
-            <h3 className="text-xl font-semibold text-gray-900 mb-3">ยืนยันการย้ายยอดวันนี้</h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-3">ยืนยันการรีเซ็ตยอดสุทธิ</h3>
             <p className="text-gray-600 mb-4">
-              คุณแน่ใจหรือไม่ว่าจะย้ายยอดสุทธิของวันนี้ไปยังยอดสะสมเก่า แล้วล้างรายการคำสั่งซื้อที่เสร็จสิ้นวันนี้?
+              คุณแน่ใจหรือไม่ว่าจะรีเซ็ตยอดสุทธิทั้งหมดและล้างประวัติคำสั่งซื้อที่เสร็จสิ้น?
             </p>
             <div className="flex gap-3">
               <button

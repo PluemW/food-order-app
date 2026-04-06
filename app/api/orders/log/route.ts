@@ -36,9 +36,20 @@ export async function PATCH(req: Request) {
     return Response.json({ error: "Invalid action" }, { status: 400 })
   }
 
+  const log = await readLog()
+  if (body.action === "clear") {
+    const nextLog = {
+      ...log,
+      savedNet: 0,
+      lastResetDay: new Date().toISOString(),
+      history: [],
+    }
+    await writeLog(nextLog)
+    return Response.json(nextLog)
+  }
+
   const amount = Number(body.amount ?? 0)
   const addedAmount = Number.isFinite(amount) && amount > 0 ? amount : 0
-  const log = await readLog()
   const currentSavedNet = typeof log.savedNet === "number" ? log.savedNet : 0
   const nextSavedNet = currentSavedNet + addedAmount
   const nextLog = {

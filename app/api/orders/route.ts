@@ -31,7 +31,13 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   const body = await req.json()
-  const { orderId, status } = body
+  const { orderId, status, action } = body
+
+  if (action === "clearCompleted") {
+    orders = orders.filter((o) => o.status !== "completed")
+    console.log("Cleared completed orders")
+    return Response.json({ success: true, remainingOrders: orders })
+  }
 
   const orderIndex = orders.findIndex((o) => o.id === orderId)
   if (orderIndex === -1) {
