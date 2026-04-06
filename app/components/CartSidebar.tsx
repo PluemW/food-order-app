@@ -11,6 +11,8 @@ const optionLabels: Record<string, string> = {
   "less-sugar": "หวานน้อย",
   "normal-sugar": "หวานปกติ",
   "extra-sugar": "หวานมาก",
+  "hot": "ร้อน",
+  "cold": "เย็น",
 }
 
 interface CartItem {
@@ -18,6 +20,7 @@ interface CartItem {
   qty: number
   option?: string
   extraSize?: boolean
+  temperature?: "hot" | "cold"
 }
 
 export default function CartSidebar({
@@ -28,7 +31,7 @@ export default function CartSidebar({
   total,
 }: {
   cart: CartItem[]
-  onClose: () => void
+  onClose: () => void, temperature?: "hot" | "cold"
   onUpdateCart: (menuId: number, qty: number, option?: string, extraSize?: boolean) => void
   onCheckout: () => void
   total: number
@@ -55,7 +58,7 @@ export default function CartSidebar({
             const extraPrice = item.extraSize ? 10 : 0
             const itemPrice = menuItem.price + extraPrice
             return (
-              <div key={`${item.menuId}-${item.option ?? "default"}-${item.extraSize ? "big" : "normal"}`} className="border-b border-gray-200 py-3">
+              <div key={`${item.menuId}-${item.option ?? "default"}-${item.extraSize ? "big" : "normal"}-${item.temperature ?? "default"}`} className="border-b border-gray-200 py-3">
                 <div className="font-semibold text-lg text-gray-800">
                   {menuItem.name}
                   {item.extraSize && (
@@ -64,16 +67,19 @@ export default function CartSidebar({
                   {item.option && (
                     <span className="text-green-600 text-sm"> ({optionLabels[item.option] ?? item.option})</span>
                   )}
+                  {item.temperature && (
+                    <span className="text-blue-600 text-sm"> ({optionLabels[item.temperature] ?? item.temperature})</span>
+                  )}
                 </div>
                 <div className="text-sm text-gray-500">{item.qty} x ฿{itemPrice} = ฿{itemPrice * item.qty}</div>
                 <div className="flex gap-2 mt-2">
                   <button
-                    onClick={() => onUpdateCart(item.menuId, Math.max(0, item.qty - 1), item.option, item.extraSize)}
+                    onClick={() => onUpdateCart(item.menuId, Math.max(0, item.qty - 1), item.option, item.extraSize, item.temperature)}
                     className="px-3 py-1 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 transition"
                   >-</button>
                   <span className="px-3 py-1 rounded-lg bg-green-50 text-green-700">{item.qty}</span>
                   <button
-                    onClick={() => onUpdateCart(item.menuId, item.qty + 1, item.option, item.extraSize)}
+                    onClick={() => onUpdateCart(item.menuId, item.qty + 1, item.option, item.extraSize, item.temperature)}
                     className="px-3 py-1 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 transition"
                   >+</button>
                 </div>

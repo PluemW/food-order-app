@@ -19,6 +19,11 @@ const sweetnessOptions = [
   { value: "extra-sugar", label: "หวานมาก" },
 ]
 
+const temperatureOptions = [
+  { value: "hot", label: "☕ ร้อน" },
+  { value: "cold", label: "🧊 เย็น" },
+]
+
 const optionLabels: Record<string, string> = {
   "no-spicy": "ไม่เผ็ด",
   "less-spicy": "เผ็ดน้อย",
@@ -35,6 +40,7 @@ type CartItem = {
   qty: number
   option?: string
   extraSize?: boolean
+  temperature?: "hot" | "cold"
 }
 
 type CustomerData = {
@@ -55,6 +61,10 @@ function getDefaultExtraSize(item: MenuItem) {
   return item.requiresExtraSize ? false : undefined
 }
 
+function getDefaultTemperature(item: MenuItem) {
+  return item.requiresTemperature ? "hot" : undefined
+}
+
 export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>("main-dish")
   const [cart, setCart] = useState<CartItem[]>([])
@@ -63,6 +73,7 @@ export default function MenuPage() {
   const [submitting, setSubmitting] = useState(false)
   const [selectedOptions, setSelectedOptions] = useState<Record<number, string>>({})
   const [selectedExtraSizes, setSelectedExtraSizes] = useState<Record<number, boolean>>({})
+  const [selectedTemperatures, setSelectedTemperatures] = useState<Record<number, "hot" | "cold">>({})
   const [notification, setNotification] = useState<{
     type: "success" | "error"
     title: string
@@ -81,6 +92,11 @@ export default function MenuPage() {
     return selectedExtraSizes[item.id] ?? false
   }
 
+  const getSelectedTemperature = (item: MenuItem) => {
+    if (!item.requiresTemperature) return undefined
+    return selectedTemperatures[item.id] ?? getDefaultTemperature(item)
+  }
+
   const handleOptionChange = (menuId: number, option: string) => {
     setSelectedOptions((prev) => ({ ...prev, [menuId]: option }))
   }
@@ -89,27 +105,31 @@ export default function MenuPage() {
     setSelectedExtraSizes((prev) => ({ ...prev, [menuId]: extraSize }))
   }
 
-  const addToCart = (menuId: number, option?: string, extraSize?: boolean) => {
+  const handleTemperatureChange = (menuId: number, temperature: "hot" | "cold") => {
+    setSelectedTemperatures((prev) => ({ ...prev, [menuId]: temperature }))
+  }
+
+  const addToCart = (menuId: number, option?: string, extraSize?: boolean, temperature?: "hot" | "cold") => {
     setCart((prev) => {
-      const existing = prev.find((item) => item.menuId === menuId && item.option === option && item.extraSize === extraSize)
+      const existing = prev.find((item) => item.menuId === menuId && item.option === option && item.extraSize === extraSize && item.temperature === temperature)
       if (existing) {
         return prev.map((item) =>
-          item.menuId === menuId && item.option === option && item.extraSize === extraSize
+          item.menuId === menuId && item.option === option && item.extraSize === extraSize && item.temperature === temperature
             ? { ...item, qty: item.qty + 1 }
             : item
         )
       }
-      return [...prev, { menuId, qty: 1, option, extraSize }]
+      return [...prev, { menuId, qty: 1, option, extraSize, temperature }]
     })
   }
 
-  const updateCart = (menuId: number, qty: number, option?: string, extraSize?: boolean) => {
+  const updateCart = (menuId: number, qty: number, option?: string, extraSize?: boolean, temperature?: "hot" | "cold") => {
     if (qty <= 0) {
-      setCart((prev) => prev.filter((item) => !(item.menuId === menuId && item.option === option && item.extraSize === extraSize)))
+      setCart((prev) => prev.filter((item) => !(item.menuId === menuId && item.option === option && item.extraSize === extraSize && item.temperature === temperature)))
     } else {
       setCart((prev) =>
         prev.map((item) =>
-          item.menuId === menuId && item.option === option && item.extraSize === extraSize ? { ...item, qty } : item
+          item.menuId === menuId && item.option === option && item.extraSize === extraSize && item.temperature === temperature ? { ...item, qty } : item
         )
       )
     }
@@ -228,9 +248,11 @@ export default function MenuPage() {
               item={item}
               selectedOption={getSelectedOption(item)}
               selectedExtraSize={getSelectedExtraSize(item)}
+              selectedTemperature={getSelectedTemperature(item)}
               onOptionChange={handleOptionChange}
               onExtraSizeChange={handleExtraSizeChange}
-              onAddToCart={() => addToCart(item.id, getSelectedOption(item), getSelectedExtraSize(item))}
+              onTemperatureChange={handleTemperatureChange}
+              onAddToCart={() => addToCart(item.id, getSelectedOption(item), getSelectedExtraSize(item), getSelectedTemperature(item))}
             />
           ))}
         </div>
@@ -296,15 +318,19 @@ function MenuItem({
   item,
   selectedOption,
   selectedExtraSize,
+  selectedTemperature,
   onOptionChange,
   onExtraSizeChange,
+  onTemperatureChange,
   onAddToCart,
 }: {
   item: MenuItem
   selectedOption?: string
   selectedExtraSize?: boolean
+  selectedTemperature?: "hot" | "cold"
   onOptionChange: (menuId: number, option: string) => void
   onExtraSizeChange: (menuId: number, extraSize: boolean) => void
+  onTemperatureChange: (menuId: number, temperature: "hot" | "cold") => void
   onAddToCart: () => void
 }) {
   const optionChoices = item.requiresSpiceLevel
@@ -374,6 +400,28 @@ function MenuItem({
                 >
                   พิเศษ
                 </button>
+              </div>
+            </div>
+          )}
+
+          {item.requiresTemperature && (
+            <div className="rounded-3xl bg-blue-50 p-3">
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                <span>เลือกความเย็น/ร้อน</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {temperatureOptions.map((choice) => (
+                  <button
+                    key={choice.value}
+                    type="button"
+                    onClick={() => onTemperatureChange(item.id, choice.value as "hot" | "cold")}
+                    className={`rounded-2xl px-3 py-2 text-sm font-medium transition ${
+                      selectedTemperature === choice.value ? "bg-blue-500 text-white" : "bg-white text-gray-700 border border-blue-200"
+                    }`}
+                  >
+                    {choice.label}
+                  </button>
+                ))}
               </div>
             </div>
           )}

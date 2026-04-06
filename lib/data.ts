@@ -8,6 +8,7 @@ export interface MenuItem {
   requiresSpiceLevel?: boolean;
   requiresSweetnessLevel?: boolean;
   requiresExtraSize?: boolean;
+  requiresTemperature?: boolean;
 }
 
 export type OrderStatus = "pending" | "cooking" | "waiting-for-payment" | "completed"
@@ -17,6 +18,7 @@ export interface OrderItem {
   qty: number
   option?: string
   extraSize?: boolean
+  temperature?: "hot" | "cold"
 }
 
 export interface Order {
@@ -135,7 +137,7 @@ export const menus: MenuItem[] = [
   },
   {
     id: 13,
-    name: "ต้มยำปลากั้ง",
+    name: "ต้มยำปลาคัง",
     price: 150,
     category: "soup",
     description: "เลือกระดับความเผ็ดได้",
@@ -271,7 +273,7 @@ export const menus: MenuItem[] = [
   },
   {
     id: 35,
-    name: "แกงป่าปลากั้ง",
+    name: "แกงป่าปลาคัง",
     price: 150,
     category: "side",
     description: "เลือกระดับความเผ็ดได้",
@@ -280,7 +282,7 @@ export const menus: MenuItem[] = [
   },
   {
     id: 36,
-    name: "กระเพราปลากั้ง",
+    name: "กระเพราปลาคัง",
     price: 150,
     category: "side",
     description: "เลือกระดับความเผ็ดได้",
@@ -289,17 +291,17 @@ export const menus: MenuItem[] = [
   },
   {
     id: 37,
-    name: "ผัดฉ่าปลากั้ง",
+    name: "ผัดฉ่าปลาคัง",
     price: 150,
     category: "side",
     description: "เลือกระดับความเผ็ดได้",
     icon: "🐟",
     requiresSpiceLevel: true,
   },
-  { id: 38, name: "ปลากั้งทอดกระเทียม", price: 150, category: "side", description: "ปลากั้งทอดกรอบ", icon: "🐟" },
+  { id: 38, name: "ปลาคังทอดกระเทียม", price: 150, category: "side", description: "ปลาคังทอดกรอบ", icon: "🐟" },
   {
     id: 39,
-    name: "ปลากั้งลวกจิ้ม",
+    name: "ปลาคังลวกจิ้ม",
     price: 150,
     category: "side",
     description: "เลือกระดับความเผ็ดได้",
@@ -374,6 +376,7 @@ export const menus: MenuItem[] = [
     description: "ร้อน/เย็น ปรับระดับความหวานได้",
     icon: "🥛",
     requiresSweetnessLevel: true,
+    requiresTemperature: true,
   },
   {
     id: 61,
@@ -383,6 +386,7 @@ export const menus: MenuItem[] = [
     description: "ร้อน/เย็น ปรับระดับความหวานได้",
     icon: "🥤",
     requiresSweetnessLevel: true,
+    requiresTemperature: true,
   },
   {
     id: 62,
@@ -391,6 +395,7 @@ export const menus: MenuItem[] = [
     category: "drinks",
     description: "ร้อน/เย็น ปรับระดับความหวานได้",
     icon: "🍫",
+    requiresTemperature: true,
     requiresSweetnessLevel: true,
   },
   {
@@ -400,6 +405,7 @@ export const menus: MenuItem[] = [
     category: "drinks",
     description: "ร้อน/เย็น ปรับระดับความหวานได้",
     icon: "🍫",
+    requiresTemperature: true,
     requiresSweetnessLevel: true,
   },
   {
@@ -408,17 +414,19 @@ export const menus: MenuItem[] = [
     price: 25,
     category: "drinks",
     description: "ร้อน/เย็น ปรับระดับความหวานได้",
+    requiresTemperature: true,
     icon: "🥛",
     requiresSweetnessLevel: true,
   },
   {
     id: 65,
-    name: "เนสวิท้า",
+    name: "เนสวีต้า",
     price: 30,
     category: "drinks",
     description: "ร้อน/เย็น ปรับระดับความหวานได้",
     icon: "🥛",
     requiresSweetnessLevel: true,
+    requiresTemperature: true,
   },
   {
     id: 66,

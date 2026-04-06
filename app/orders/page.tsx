@@ -13,6 +13,8 @@ const optionLabels: Record<string, string> = {
   "less-sugar": "หวานน้อย",
   "normal-sugar": "หวานปกติ",
   "extra-sugar": "หวานมาก",
+  "hot": "ร้อน",
+  "cold": "เย็น",
 }
 
 const statusColors: Record<OrderStatus, { bg: string; text: string; dot: string }> = {
@@ -40,6 +42,25 @@ function getOrderTotal(order: Order) {
   }, 0)
 }
 
+// Group payment orders by table for dine-in, or show delivery orders individually
+function groupPaymentOrdersByTable(orders: Order[]): Order[][] {
+  const grouped: Record<string, Order[]> = {}
+  const deliveryOrders: Order[] = []
+
+  for (const order of orders) {
+    if (order.orderType === "delivery") {
+      deliveryOrders.push(order)
+    } else if (order.tableNumber) {
+      const key = `table-${order.tableNumber}`
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(order)
+    }
+  }
+
+  // Return grouped dine-in orders and individual delivery orders
+  return [...Object.values(grouped), ...deliveryOrders.map(o => [o])]
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,11 +68,65 @@ export default function OrdersPage() {
   const [filterStatus, setFilterStatus] = useState<"all" | "preparing" | "payment" | "completed">("all")
   const [savedNet, setSavedNet] = useState(0)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [previousPendingCount, setPreviousPendingCount] = useState(0)
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [soundVolume, setSoundVolume] = useState(0.7)
+
+  // Play notification sound
+  function playNotificationSound() {
+    if (!soundEnabled) return
+    
+    try {
+      const AudioContext = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      const audioContext = new AudioContext()
+      const now = audioContext.currentTime
+      
+      // Create oscillators for a pleasant bell-like notification sound
+      // Lower note - main tone
+      const osc1 = audioContext.createOscillator()
+      const gain1 = audioContext.createGain()
+      osc1.connect(gain1)
+      gain1.connect(audioContext.destination)
+      osc1.type = "sine"
+      osc1.frequency.value = 800 // Hz
+      
+      // Higher note - harmonics
+      const osc2 = audioContext.createOscillator()
+      const gain2 = audioContext.createGain()
+      osc2.connect(gain2)
+      gain2.connect(audioContext.destination)
+      osc2.type = "sine"
+      osc2.frequency.value = 1200 // Hz
+      
+      // Volume envelope
+      gain1.gain.setValueAtTime(soundVolume * 0.3, now)
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.5)
+      
+      gain2.gain.setValueAtTime(soundVolume * 0.2, now)
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.4)
+      
+      osc1.start(now)
+      osc1.stop(now + 0.5)
+      osc2.start(now)
+      osc2.stop(now + 0.4)
+    } catch (error) {
+      console.error("Error playing notification sound:", error)
+    }
+  }
 
   async function fetchOrders() {
     try {
       const res = await fetch("/api/orders")
       const data = await res.json()
+      
+      // Detect new pending orders
+      const newPendingCount = data.filter((o: Order) => o.status === "pending").length
+      if (previousPendingCount > 0 && newPendingCount > previousPendingCount) {
+        // New order(s) arrived
+        playNotificationSound()
+      }
+      setPreviousPendingCount(newPendingCount)
+      
       setOrders(data)
     } catch (error) {
       console.error("Error fetching orders:", error)
@@ -105,6 +180,26 @@ export default function OrdersPage() {
     }
   }
 
+  async function updateGroupedOrdersStatus(orderIds: number[], newStatus: OrderStatus) {
+    try {
+      await Promise.all(
+        orderIds.map((orderId) =>
+          fetch("/api/orders", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId, status: newStatus }),
+          })
+        )
+      )
+      
+      setOrders((prev) =>
+        prev.map((o) => (orderIds.includes(o.id) ? { ...o, status: newStatus, updatedAt: Date.now() } : o))
+      )
+    } catch (error) {
+      console.error("Error updating grouped orders:", error)
+    }
+  }
+
   const preparingOrders = orders.filter((o) => o.status === "pending" || o.status === "cooking")
   const paymentOrders = orders.filter((o) => o.status === "waiting-for-payment")
   const completedOrders = orders.filter((o) => o.status === "completed")
@@ -147,9 +242,33 @@ export default function OrdersPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 py-8 px-4 sm:px-6 md:px-8 shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Logo" className="h-15 w-15 rounded-full object-cover" />
-            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">หน้าจอครัว</h1>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <img src="/logo.png" alt="Logo" className="h-15 w-15 rounded-full object-cover" />
+              <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">หน้าจอครัว</h1>
+            </div>
+            {/* Sound Controls */}
+            <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
+              <button
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className={`px-3 py-1 rounded-lg font-semibold text-sm transition-colors ${
+                  soundEnabled
+                    ? "bg-green-500 text-white hover:bg-green-600"
+                    : "bg-gray-300 text-gray-700 hover:bg-gray-400"
+                }`}
+              >
+                {soundEnabled ? "🔔 สัญญาณ" : "🔇 ปิด"}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={soundVolume * 100}
+                onChange={(e) => setSoundVolume(parseFloat(e.target.value) / 100)}
+                className="w-24 h-2 cursor-pointer"
+                disabled={!soundEnabled}
+              />
+            </div>
           </div>
           <p className="text-gray-600">จัดการคำสั่งซื้อและติดตามการทำงานของอาหาร</p>
         </div>
@@ -312,9 +431,16 @@ export default function OrdersPage() {
                   <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500">ไม่มีคำสั่งซื้อรอชำระเงิน</div>
                 ) : (
                   <div className="space-y-4">
-                    {paymentOrders.map((order) => (
-                      <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} />
-                    ))}
+                    {(() => {
+                      const groupedPaymentOrders = groupPaymentOrdersByTable(paymentOrders)
+                      return groupedPaymentOrders.map((orderGroup) => {
+                        if (orderGroup.length > 1) {
+                          return <GroupedOrderCard key={`table-${orderGroup[0].tableNumber}`} orders={orderGroup} onUpdateStatus={updateGroupedOrdersStatus} />
+                        } else {
+                          return <OrderCard key={orderGroup[0].id} order={orderGroup[0]} onUpdateStatus={updateOrderStatus} />
+                        }
+                      })
+                    })()}
                   </div>
                 )}
               </div>
@@ -385,6 +511,98 @@ export default function OrdersPage() {
         </div>
       )}
     </main>
+  )
+}
+
+function GroupedOrderCard({
+  orders,
+  onUpdateStatus,
+}: {
+  orders: Order[]
+  onUpdateStatus: (orderIds: number[], status: OrderStatus) => void
+}) {
+  const colors = statusColors["waiting-for-payment"]
+  const groupedTotal = orders.reduce((total, order) => total + getOrderTotal(order), 0)
+
+  const getTimeString = (timestamp: number) => {
+    const diff = Math.floor((Date.now() - timestamp) / 1000)
+    if (diff < 60) return `${diff}s ago`
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+    return `${Math.floor(diff / 3600)}h ago`
+  }
+
+  const tableNumber = orders[0].tableNumber
+
+  return (
+    <div className="bg-white rounded-xl border border-indigo-200 overflow-hidden hover:shadow-lg transition-shadow">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 border-b border-indigo-100 bg-indigo-50">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <div className={`px-3 py-1 rounded-full text-sm font-semibold ${colors.bg} ${colors.text}`}>
+              {statusLabels["waiting-for-payment"]} - โต๊ะ {tableNumber}
+            </div>
+            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded-full font-semibold">
+              {orders.length} Order{orders.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <h3 className="text-lg sm:text-2xl font-bold text-gray-900">รวมบิล โต๊ะ #{tableNumber}</h3>
+          <div className="text-sm text-gray-600 mt-2">
+            <p>สาขาที่ {orders.length} คำสั่งซื้อ • ครั้งล่าสุด: {getTimeString(Math.max(...orders.map(o => o.createdAt)))}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Items from all orders */}
+      <div className="px-6 py-4 bg-gray-50">
+        <h4 className="text-sm font-semibold text-gray-700 mb-3">รายการอาหารทั้งหมด</h4>
+        <div className="space-y-2">
+          {orders.flatMap((order, orderIdx) =>
+            order.items.map((item, itemIdx) => (
+              <div key={`${orderIdx}-${itemIdx}`} className="flex items-center justify-between p-3 bg-white rounded-lg border border-indigo-100">
+                <div className="flex items-center gap-3 flex-1">
+                  <span className="text-2xl">{getMenuItemIcon(item.menuId)}</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">
+                      {getMenuItemName(item.menuId)}
+                      {item.extraSize && (
+                        <span className="text-orange-600 text-sm"> (ใหญ่พิเศษ)</span>
+                      )}
+                      {item.option && (
+                        <span className="text-orange-600 text-sm"> ({optionLabels[item.option] ?? item.option})</span>
+                      )}
+                      {item.temperature && (
+                        <span className="text-blue-600 text-sm"> ({optionLabels[item.temperature] ?? item.temperature})</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500">Order #{order.id}</p>
+                  </div>
+                </div>
+                <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-semibold text-sm">
+                  x {item.qty}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="px-6 py-3 bg-white border-t border-indigo-100">
+        <p className="text-lg font-semibold text-gray-800">รวมทั้งหมด: <span className="text-indigo-600">฿{groupedTotal}</span></p>
+      </div>
+
+      {/* Actions */}
+      <div className="px-6 py-4 bg-white border-t border-indigo-100 flex flex-col sm:flex-row gap-3">
+        <button
+          onClick={() => {
+            onUpdateStatus(orders.map(o => o.id), "completed")
+          }}
+          className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors"
+        >
+          💳 ยืนยันชำระเงินทั้งบิล
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -464,6 +682,9 @@ function OrderCard({
                     )}
                     {item.option && (
                       <span className="text-orange-600 text-sm"> ({optionLabels[item.option] ?? item.option})</span>
+                    )}
+                    {item.temperature && (
+                      <span className="text-blue-600 text-sm"> ({optionLabels[item.temperature] ?? item.temperature})</span>
                     )}
                   </p>
                 </div>
