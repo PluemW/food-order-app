@@ -32,7 +32,7 @@ export default function CartSidebar({
 }: {
   cart: CartItem[]
   onClose: () => void, temperature?: "hot" | "cold"
-  onUpdateCart: (menuId: number, qty: number, option?: string, extraSize?: boolean) => void
+  onUpdateCart: (menuId: number, qty: number, option?: string, extraSize?: boolean, temperature?: "hot" | "cold") => void
   onCheckout: () => void
   total: number
 }) {
