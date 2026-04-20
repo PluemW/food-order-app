@@ -1,5 +1,6 @@
 import Image from "next/image"
 import Link from "next/link"
+import ChatBox from "./components/ChatBox";
 
 export default function Home() {
   return (
@@ -22,6 +23,7 @@ export default function Home() {
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-4">
               ร้านอาหารบ้านตา
             </h1>
+            <ChatBox />
             <p className="text-2xl font-semibold text-green-800 mb-6">
               ร้านอาหารรสจัดอร่อยถูกปาก พร้อมความเป็นกันเองเหมือนกินข้าวกับครอบครัว
             </p>
